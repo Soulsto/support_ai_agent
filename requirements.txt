@@ -19,3 +19,7 @@ numpy
 
 # Web Scraping (for future use)
 bs4
+
+# Création de FASTAPI 
+fastapi
+uvicorn[standard]

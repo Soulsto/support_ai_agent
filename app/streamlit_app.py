@@ -4,14 +4,15 @@ import os
 import sys
 import json
 import re
+import requests
 
 # --- PATH SETUP ---
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from agent.utils import load_json
 from langchain_agent.main_agent import create_agent_executor
 from agent.live_fetcher import fetch_and_analyze_player_data
-from agent.tools import get_comprehensive_game_analysis
-
+from agent.plotter import plot_pathing_map, plot_death_locations, create_game_animation, plot_metric
+from agent.tools import get_pro_build_for_champion, get_comprehensive_game_analysis # <-- CORRECTED LINE
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="LoL Support Agent", layout="wide")
 
@@ -127,7 +128,7 @@ with st.sidebar:
                 st.error("Player not found. Please check your inputs.")
 
 # --- TABS FOR DISPLAY ---
-tab1, tab2, tab3 = st.tabs(["🤖 AI Coach ", "📊 Game Analysis Dashboard", "📂 Raw Game Data"])
+tab1, tab2, tab3 , tab4 = st.tabs(["🤖 AI Coach ", "📊 Game Analysis Dashboard", "📂 Raw Game Data", "FAST API"])
 
 with tab1:
     st.header("Chat with your AI Support Coach")
@@ -164,19 +165,31 @@ with tab2:
     st.header("Single Game Deep Dive")
     if not st.session_state.user_games.empty and st.session_state.current_user:
         user_games_df = st.session_state.user_games
-        match_ids = user_games_df['matchId'].tolist()
         descriptive_options = [f"{game.get('champion', 'Unknown')} - {game.get('matchId')}" for game in user_games_df.to_dict('records')]
         selected_option = st.selectbox("Select one of your games to analyze:", options=descriptive_options)
         
         if st.button("Analyze This Game"):
             if selected_option:
                 selected_match_id = selected_option.split(" - ")[1]
-                with st.spinner(f"Performing analysis on {selected_match_id}..."):
-                    analysis_result = get_comprehensive_game_analysis(match_id=selected_match_id, game_name=st.session_state.current_user['game_name'], tag_line=st.session_state.current_user['tag_line'])
-                    if "error" in analysis_result:
-                        st.error(analysis_result["error"])
-                    else:
-                        display_game_analysis(analysis_result)
+                current_user = st.session_state.current_user
+                
+                with st.spinner(f"Performing analysis via API for {selected_match_id}..."):
+                    # --- NEW: Call the FastAPI Endpoint for game analysis ---
+                    api_url = f"http://localhost:8000/analyze-game/{current_user['game_name']}/{current_user['tag_line']}/{selected_match_id}"
+                    
+                    try:
+                        response = requests.get(api_url)
+                        if response.status_code == 200:
+                            analysis_result = response.json()
+                            # Call our existing UI function to display the result
+                            display_game_analysis(analysis_result)
+                        else:
+                            st.error(f"Error from API: {response.json().get('detail', 'Unknown error')}")
+                    
+                    except requests.exceptions.ConnectionError:
+                        st.error("Connection Error: Could not connect to the API. Is the backend server running?")
+                        st.code("To run the backend, use this command in a new terminal:\n\nuvicorn backend.main:app --reload")
+
     else:
         st.info("Fetch your game data from the sidebar to begin analysis.")
 
@@ -186,3 +199,48 @@ with tab3:
         st.dataframe(st.session_state.user_games)
     else:
         st.info("No user data loaded.")
+
+with tab4: # This is the "Pro Player Builds" tab
+    st.header("Pro Player Build Explorer")
+    pro_df = load_pro_data()
+
+    if pro_df.empty:
+        st.warning("Pro player data is not available.")
+    else:
+        champions = sorted(pro_df['champion'].unique())
+        selected_champion_build = st.selectbox("Choose a champion to see their pro build:", options=champions)
+
+        if selected_champion_build:
+            with st.spinner(f"Finding most common build for {selected_champion_build}..."):
+                
+                # --- NEW: Call the FastAPI Endpoint ---
+                # The URL for our running FastAPI server
+                api_url = f"http://localhost:8000/pro-build/{selected_champion_build}"
+                
+                try:
+                    response = requests.get(api_url)
+                    # Check if the request was successful
+                    if response.status_code == 200:
+                        build_data = response.json()
+                        
+                        st.subheader(f"Most Common Pro Build for {build_data.get('champion')}")
+                        st.caption(f"Based on {build_data.get('games_analyzed')} pro games.")
+
+                        # Display the items in columns
+                        cols = st.columns(6)
+                        if build_data.get("boots") and build_data["boots"].get("image_url"):
+                            with cols[0]:
+                                st.image(build_data["boots"]["image_url"], width=64)
+                                st.caption(f"{build_data['boots']['name']}")
+
+                        for i, item in enumerate(build_data.get("core_items", [])):
+                            if i < 5 and item.get("image_url"):
+                                with cols[i+1]:
+                                    st.image(item["image_url"], width=64)
+                                    st.caption(f"{item['name']} ({item['popularity']})")
+                    else:
+                        st.error(f"Error fetching data from API: Status code {response.status_code}")
+                
+                except requests.exceptions.ConnectionError as e:
+                    st.error(f"Connection Error: Could not connect to the API. Is the backend server running?")
+                    st.code("To run the backend, use this command in a new terminal:\n\nuvicorn backend.main:app --reload")

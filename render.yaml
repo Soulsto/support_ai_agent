@@ -1,0 +1,10 @@
+services:
+  # This defines your web application service
+  - type: web
+    name: support_ai_agent
+    env: docker # Specify we are using a Docker environment
+    # Health Check: Render will ping this URL to make sure your app is running
+    healthCheckPath: /healthz
+    # Optional: Set a custom number of instances, memory, or CPU.
+    # The free tier has its own limits.
+    plan: free

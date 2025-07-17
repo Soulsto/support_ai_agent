@@ -1,0 +1,12 @@
+
+
+# Ignore secret environment file
+.env
+.venv/
+
+# Ignore Python cache
+__pycache__/
+
+# Ignore large generated data files
+data/pro_players_merged.json
+data/users/

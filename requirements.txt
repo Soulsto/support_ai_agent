@@ -1,0 +1,21 @@
+# Core Functionality
+requests
+python-dotenv
+
+# AI / LangChain
+langchain
+langchain-google-genai
+google-generativeai
+openai # Kept for potential future use
+
+# Streamlit Web App
+streamlit
+pandas
+
+# Data & Visualization
+matplotlib
+Pillow
+numpy
+
+# Web Scraping (for future use)
+bs4

@@ -16,6 +16,7 @@ pandas
 matplotlib
 Pillow
 numpy
+ijson # For memory-efficient parsing of large JSON files
 
 # Web Scraping (for future use)
 bs4

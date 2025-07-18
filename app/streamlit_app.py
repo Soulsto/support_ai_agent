@@ -7,12 +7,20 @@ import re
 import requests
 
 # --- PATH SETUP ---
+# Add the project root to the Python path to allow imports from `src`.
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from agent.utils import load_json
-from langchain_agent.main_agent import create_agent_executor
-from agent.live_fetcher import fetch_and_analyze_player_data
-from agent.plotter import plot_pathing_map, plot_death_locations, create_game_animation, plot_metric
-from agent.tools import get_pro_build_for_champion, get_comprehensive_game_analysis # <-- CORRECTED LINE
+
+from src.utils.utils import load_json
+from src.agent.main_agent import create_agent_executor
+from src.api_client.live_fetcher import fetch_and_analyze_player_data
+from src.analysis.plotter import plot_pathing_map, plot_death_locations, create_game_animation, plot_metric
+from src.agent.tools import (
+    get_pro_build_for_champion, 
+    get_comprehensive_game_analysis,
+    get_pro_matchup_advice,
+    analyze_gold_efficiency,
+    analyze_performance_trend
+)
 # --- PAGE CONFIGURATION ---
 st.set_page_config(page_title="LoL Support Agent", layout="wide")
 
@@ -128,9 +136,15 @@ with st.sidebar:
                 st.error("Player not found. Please check your inputs.")
 
 # --- TABS FOR DISPLAY ---
-tab1, tab2, tab3 , tab4 = st.tabs(["🤖 AI Coach ", "📊 Game Analysis Dashboard", "📂 Raw Game Data", "FAST API"])
+tabs = st.tabs([
+    "🤖 AI Coach", 
+    "📊 Game Analysis Dashboard", 
+    "🧪 New Agent Tools",  # <-- NEW TAB
+    "📂 Raw Game Data", 
+    "⚡ FastAPI"
+])
 
-with tab1:
+with tabs[0]: # AI Coach
     st.header("Chat with your AI Support Coach")
     support_coach_agent = get_agent()
     
@@ -139,7 +153,7 @@ with tab1:
     elif st.session_state.current_user:
         st.info(f"Currently analyzing for user: **{st.session_state.current_user['game_name']}#{st.session_state.current_user['tag_line']}**")
         with st.form(key="chat_form"):
-            user_question = st.text_area("Ask a specific question:", placeholder="e.g., Generate my pathing in my last game")
+            user_question = st.text_area("Ask a specific question:", placeholder="e.g., Generate my pathing in my last game, or give me advice for using Thresh.")
             submit_button = st.form_submit_button(label="Get Advice")
 
         if submit_button and user_question:
@@ -149,7 +163,7 @@ with tab1:
                 result = support_coach_agent.invoke({"input": contextual_prompt})
                 st.markdown(result['output'])
 
-                # --- NEW LOGIC: Find and display any images the agent created ---
+                # Find and display any images the agent created
                 image_paths = re.findall(r"data/plots/[\w.-]+\.(?:png|gif)", result['output'])
                 if image_paths:
                     for image_path in image_paths:
@@ -160,8 +174,7 @@ with tab1:
     else:
         st.warning("Please fetch your game data from the sidebar to activate the AI Coach.")
 
-
-with tab2:
+with tabs[1]: # Game Analysis Dashboard
     st.header("Single Game Deep Dive")
     if not st.session_state.user_games.empty and st.session_state.current_user:
         user_games_df = st.session_state.user_games
@@ -174,33 +187,85 @@ with tab2:
                 current_user = st.session_state.current_user
                 
                 with st.spinner(f"Performing analysis via API for {selected_match_id}..."):
-                    # --- NEW: Call the FastAPI Endpoint for game analysis ---
                     api_url = f"http://localhost:8000/analyze-game/{current_user['game_name']}/{current_user['tag_line']}/{selected_match_id}"
-                    
                     try:
                         response = requests.get(api_url)
                         if response.status_code == 200:
                             analysis_result = response.json()
-                            # Call our existing UI function to display the result
                             display_game_analysis(analysis_result)
                         else:
                             st.error(f"Error from API: {response.json().get('detail', 'Unknown error')}")
-                    
                     except requests.exceptions.ConnectionError:
                         st.error("Connection Error: Could not connect to the API. Is the backend server running?")
                         st.code("To run the backend, use this command in a new terminal:\n\nuvicorn backend.main:app --reload")
-
     else:
         st.info("Fetch your game data from the sidebar to begin analysis.")
 
-with tab3:
+with tabs[2]: # New Agent Tools
+    st.header("New Feature Testing")
+    if not st.session_state.current_user:
+        st.warning("Please fetch your game data from the sidebar to use these tools.")
+    else:
+        st.info(f"Testing for user: **{st.session_state.current_user['game_name']}#{st.session_state.current_user['tag_line']}**")
+        
+        # --- 1. Matchup Advisor ---
+        st.subheader("⚔️ Pro Matchup Advisor")
+        col1, col2 = st.columns(2)
+        with col1:
+            your_champ = st.text_input("Your Support Champion", "Nami")
+        with col2:
+            enemy_champ = st.text_input("Enemy Support Champion", "Blitzcrank")
+        if st.button("Get Matchup Advice"):
+            with st.spinner("Analyzing pro data..."):
+                advice = get_pro_matchup_advice.func(your_champion=your_champ, enemy_champion=enemy_champ)
+                if "error" in advice:
+                    st.error(advice["error"])
+                else:
+                    st.json(advice)
+        st.divider()
+
+        # --- 3. Gold Efficiency ---
+        st.subheader("💰 Gold Efficiency Analysis")
+        if not st.session_state.user_games.empty:
+            match_ids_gold = st.session_state.user_games['matchId'].tolist()
+            selected_match_gold = st.selectbox("Select a Match ID for Gold Analysis", options=match_ids_gold)
+            if st.button("Analyze Gold Efficiency"):
+                with st.spinner("Analyzing gold..."):
+                    current_user = st.session_state.current_user
+                    gold_data = analyze_gold_efficiency.func(match_id=selected_match_gold, game_name=current_user['game_name'], tag_line=current_user['tag_line'])
+                    if "error" in gold_data:
+                        st.error(gold_data["error"])
+                    else:
+                        st.metric(label=f"Your GPM on {gold_data['champion']}", value=gold_data['your_gpm'], delta=f"{float(gold_data['your_gpm']) - float(gold_data['pro_average_gpm']):.2f} vs Pro Avg")
+                        st.write(f"Pro Average GPM: {gold_data['pro_average_gpm']}")
+        else:
+            st.info("No games loaded to analyze gold for.")
+        st.divider()
+
+        # --- 4. Performance Trend ---
+        st.subheader("📈 Performance Trend")
+        metric_options = ["visionScore", "killParticipation", "deaths", "assists", "wardsPlaced", "wardsKilled"]
+        selected_metric = st.selectbox("Select a metric to track your trend:", options=metric_options)
+        if st.button("Analyze My Trend"):
+            with st.spinner("Analyzing your game history..."):
+                current_user = st.session_state.current_user
+                trend_data = analyze_performance_trend.func(game_name=current_user['game_name'], tag_line=current_user['tag_line'], metric=selected_metric)
+                if "error" in trend_data:
+                    st.error(trend_data["error"])
+                else:
+                    st.write(f"**Trend for {trend_data['metric']} over the last {trend_data['games_analyzed']} games:**")
+                    st.metric(label="Trend Direction", value=trend_data['trend'])
+                    st.write(f"Older Games Avg: {trend_data['average_of_first_half']} -> Newer Games Avg: {trend_data['average_of_second_half']}")
+                    st.info(trend_data['insight'])
+
+with tabs[3]: # Raw Game Data
     st.header("Your Full Game Data")
     if not st.session_state.user_games.empty:
         st.dataframe(st.session_state.user_games)
     else:
         st.info("No user data loaded.")
 
-with tab4: # This is the "Pro Player Builds" tab
+with tabs[4]: # FastAPI
     st.header("Pro Player Build Explorer")
     pro_df = load_pro_data()
 
@@ -212,27 +277,18 @@ with tab4: # This is the "Pro Player Builds" tab
 
         if selected_champion_build:
             with st.spinner(f"Finding most common build for {selected_champion_build}..."):
-                
-                # --- NEW: Call the FastAPI Endpoint ---
-                # The URL for our running FastAPI server
                 api_url = f"http://localhost:8000/pro-build/{selected_champion_build}"
-                
                 try:
                     response = requests.get(api_url)
-                    # Check if the request was successful
                     if response.status_code == 200:
                         build_data = response.json()
-                        
                         st.subheader(f"Most Common Pro Build for {build_data.get('champion')}")
                         st.caption(f"Based on {build_data.get('games_analyzed')} pro games.")
-
-                        # Display the items in columns
                         cols = st.columns(6)
                         if build_data.get("boots") and build_data["boots"].get("image_url"):
                             with cols[0]:
                                 st.image(build_data["boots"]["image_url"], width=64)
                                 st.caption(f"{build_data['boots']['name']}")
-
                         for i, item in enumerate(build_data.get("core_items", [])):
                             if i < 5 and item.get("image_url"):
                                 with cols[i+1]:
@@ -240,7 +296,6 @@ with tab4: # This is the "Pro Player Builds" tab
                                     st.caption(f"{item['name']} ({item['popularity']})")
                     else:
                         st.error(f"Error fetching data from API: Status code {response.status_code}")
-                
                 except requests.exceptions.ConnectionError as e:
                     st.error(f"Connection Error: Could not connect to the API. Is the backend server running?")
-                    st.code("To run the backend, use this command in a new terminal:\n\nuvicorn backend.main:app --reload")
+                    st.code("To run the backend, use this command in a new terminal: uvicorn backend.main:app --reload")

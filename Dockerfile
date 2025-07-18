@@ -12,7 +12,12 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application's code into the container
-COPY . .
+COPY src/ ./src
+COPY app/ ./app
+COPY assets/ ./assets
+COPY data/ ./data
+COPY backend/ ./backend
+COPY scripts/ ./scripts
 
 # Let Docker know that the container listens on this port
 EXPOSE 8501

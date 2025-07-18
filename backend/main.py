@@ -3,8 +3,8 @@ import sys
 import os
 
 # --- PATH SETUP ---
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from agent.tools import get_pro_build_for_champion, get_comprehensive_game_analysis
+# The new structure with a `src` directory means we no longer need to modify the path.
+from src.agent.tools import get_pro_build_for_champion, get_comprehensive_game_analysis
 
 
 # Create the FastAPI app instance

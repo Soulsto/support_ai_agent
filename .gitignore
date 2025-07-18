@@ -6,4 +6,4 @@
 __pycache__/
 
 # Ignore large generated data files
-data/users/
+data/users/.DS_Store

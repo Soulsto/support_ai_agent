@@ -7,7 +7,8 @@ services:
     repo: https://github.com/Soulsto/support_ai_agent.git
     # Build and start commands
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "uvicorn backend.main:app --host 0.0.0.0 --port 8001"
+    # Uvicorn will automatically use the PORT environment variable provided by Render.
+    startCommand: "uvicorn backend.main:app --host 0.0.0.0"
     healthCheckPath: /healthz
     envVars:
       - key: PYTHON_VERSION

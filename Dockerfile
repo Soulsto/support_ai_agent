@@ -20,8 +20,8 @@ COPY backend/ ./backend
 COPY scripts/ ./scripts
 
 # Let Docker know that the container listens on this port
-EXPOSE 8501
+EXPOSE 7860
 
 # The command to run your Streamlit app
 # --server.address=0.0.0.0 allows it to be accessed from outside the container
-CMD ["streamlit", "run", "app/streamlit_app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "app/streamlit_app.py", "--server.port=7860", "--server.address=0.0.0.0"]

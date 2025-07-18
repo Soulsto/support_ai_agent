@@ -99,6 +99,9 @@ def _ms_to_min_sec(ms: int) -> str:
     seconds = total_seconds % 60
     return f"{minutes:02d}:{seconds:02d}"
 
+# Get the backend URL from an environment variable, with a fallback for local development
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8001")
+
 # --- MAIN APP ---
 st.title("League of Legends Support Agent 🛡️")
 
@@ -187,7 +190,7 @@ with tabs[1]: # Game Analysis Dashboard
                 current_user = st.session_state.current_user
                 
                 with st.spinner(f"Performing analysis via API for {selected_match_id}..."):
-                    api_url = f"http://localhost:8000/analyze-game/{current_user['game_name']}/{current_user['tag_line']}/{selected_match_id}"
+                    api_url = f"{BACKEND_URL}/analyze-game/{current_user['game_name']}/{current_user['tag_line']}/{selected_match_id}"
                     try:
                         response = requests.get(api_url)
                         if response.status_code == 200:
@@ -277,7 +280,7 @@ with tabs[4]: # FastAPI
 
         if selected_champion_build:
             with st.spinner(f"Finding most common build for {selected_champion_build}..."):
-                api_url = f"http://localhost:8000/pro-build/{selected_champion_build}"
+                api_url = f"{BACKEND_URL}/pro-build/{selected_champion_build}"
                 try:
                     response = requests.get(api_url)
                     if response.status_code == 200:

@@ -1,14 +1,28 @@
 services:
+  # A Python web service for our FastAPI backend
   - type: web
     name: lol-support-agent-backend
+    env: python
+    plan: free
+    repo: https://github.com/Soulsto/support_ai_agent.git
+    # Build and start commands
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn backend.main:app --host 0.0.0.0 --port 8001"
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12
+      - fromGroup: api-keys # Assumes you created a group named 'api-keys' for your RIOT_API_KEY
+
+  # A Docker web service for our Streamlit frontend
+  - type: web
+    name: lol-support-agent-frontend
     env: docker
     plan: free
     repo: https://github.com/Soulsto/support_ai_agent.git
     dockerContext: .
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /healthz
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.12
-      - key: PORT
-        value: 8001
+      - key: BACKEND_URL
+        # This special value tells Render to use the URL of our backend service
+        value: https://lol-support-agent-backend.onrender.com

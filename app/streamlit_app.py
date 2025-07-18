@@ -100,7 +100,7 @@ def _ms_to_min_sec(ms: int) -> str:
     return f"{minutes:02d}:{seconds:02d}"
 
 # Get the backend URL from an environment variable, with a fallback for local development
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8001")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 
 # --- MAIN APP ---
 st.title("League of Legends Support Agent 🛡️")

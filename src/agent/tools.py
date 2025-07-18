@@ -3,6 +3,7 @@
 import collections
 import numpy as np
 from langchain_core.tools import tool
+from langchain_google_genai import ChatGoogleGenerativeAI
 from src.utils.utils import load_json
 from src.analysis.plotter import plot_combat_heatmap, plot_pathing_map
 from itertools import groupby
@@ -330,56 +331,36 @@ def analyze_performance_trend(game_name: str, tag_line: str, metric: str, num_ga
 @tool
 def get_pro_matchup_advice(your_champion: str, enemy_champion: str) -> dict:
     """
-    Provides advice for a support matchup based on pro player data.
-    Analyzes win rate, KDA, and common first items for both your champion and the enemy champion.
+    Generates strategic advice for a support matchup using an AI model.
+    Provides tips on laning, ability usage, and power spikes.
     """
-    pro_data = load_json(PRO_DATA_FILE)
-    if not pro_data:
-        return {"error": "Could not load pro player data."}
+    try:
+        # Initialize the LLM specifically for this tool
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest", temperature=0.3)
 
-    matchup_games = [
-        game for game in pro_data 
-        if your_champion in [p['championName'] for p in game.get('allParticipants', [])] 
-        and enemy_champion in [p['championName'] for p in game.get('allParticipants', [])]
-    ]
-
-    if not matchup_games:
-        return {"error": f"No pro games found for the {your_champion} vs. {enemy_champion} matchup."}
-
-    def calculate_stats(champion_name):
-        wins, kills, deaths, assists, items = 0, 0, 0, 0, []
-        for game in matchup_games:
-            stats = next((p for p in game['allParticipants'] if p['championName'] == champion_name), None)
-            if not stats: continue
-            if stats.get('win'): wins += 1
-            kills += stats.get('kills', 0)
-            deaths += stats.get('deaths', 0)
-            assists += stats.get('assists', 0)
-            if stats.get('item0'): items.append(stats.get('item0'))
+        # Create a detailed prompt for the LLM
+        prompt_text = (
+            f"You are a world-class League of Legends coach. Provide expert strategic advice for a support matchup: {your_champion} vs. {enemy_champion}."
+            "Focus on the laning phase (levels 1-6). Be specific and actionable."
+            "Structure your advice into the following sections:\n"
+            "1. **Core Concept:** What is the main goal for {your_champion} in this lane?\n"
+            "2. **Key Abilities:** Which abilities are most crucial and how should they be used? Mention the ability keys (Q, W, E, R).\n"
+            "3. **Power Spikes:** When are the key level power spikes for this matchup (e.g., Level 2, Level 6)?\n"
+            "4. **Bad Scenarios:** What is the number one thing to avoid in this matchup?\n"
+        )
         
-        num_games = len(matchup_games)
-        win_rate = (wins / num_games) * 100 if num_games > 0 else 0
-        avg_kda = f"{kills/num_games:.1f}/{deaths/num_games:.1f}/{assists/num_games:.1f}"
+        # Get the response from the model
+        response = llm.invoke(prompt_text)
         
-        common_item = "N/A"
-        if items:
-            item_id = collections.Counter(items).most_common(1)[0][0]
-            items_list = load_json(ITEMS_DATA_FILE)
-            item_info = next((item for item in items_list if str(item['id']) == str(item_id)), None)
-            if item_info: common_item = item_info['name']
-            
-        return {"win_rate": f"{win_rate:.2f}%", "average_kda": avg_kda, "most_common_first_item": common_item}
+        # Return the generated advice, ensuring the 'advice' key exists.
+        return {
+            "matchup": f"{your_champion} vs. {enemy_champion}",
+            "advice": response.content
+        }
 
-    your_stats = calculate_stats(your_champion)
-    enemy_stats = calculate_stats(enemy_champion)
+    except Exception as e:
+        return {"error": f"Failed to generate AI advice: {e}"}
 
-    return {
-        "matchup": f"{your_champion} vs. {enemy_champion}",
-        "games_analyzed": len(matchup_games),
-        "your_champion_stats": your_stats,
-        "enemy_champion_stats": enemy_stats,
-        "advice": f"In this matchup, {your_champion} has a {your_stats['win_rate']} win rate against {enemy_champion}. Your average KDA is {your_stats['average_kda']} vs. their {enemy_stats['average_kda']}. A common start is {your_stats['most_common_first_item']} while they often start with {enemy_stats['most_common_first_item']}."
-    }
 
 @tool
 def analyze_gold_efficiency(match_id: str, game_name: str, tag_line: str) -> dict:
@@ -392,27 +373,32 @@ def analyze_gold_efficiency(match_id: str, game_name: str, tag_line: str) -> dic
     champion_name = user_match_data.get("champion")
     if not champion_name: return {"error": "Champion name not found in user match data."}
 
-    # Find user and enemy support in the participant list
-    user_participant = next((p for p in user_match_data.get('allParticipants', []) if p['puuid'] == user_match_data['puuid']), None)
+    # Find user by champion name (case-insensitive) and role
+    user_participant = next((p for p in user_match_data.get('allParticipants', []) if p['championName'].lower() == champion_name.lower() and p['teamPosition'] == 'UTILITY'), None)
     if not user_participant: return {"error": "Could not find user's participant data."}
     
     enemy_support = next((p for p in user_match_data.get('allParticipants', []) if p['teamPosition'] == 'UTILITY' and p['teamId'] != user_participant['teamId']), None)
 
-    # Calculate GPM
+    # --- FIX: Calculate GPM from the correct data source ---
     duration_minutes = user_match_data.get("gameDuration", 0) / 60
-    user_gpm = user_match_data.get("goldEarned", 0) / duration_minutes if duration_minutes > 0 else 0
+    user_gpm = user_participant.get("goldEarned", 0) / duration_minutes if duration_minutes > 0 else 0
     enemy_gpm = enemy_support.get("goldEarned", 0) / duration_minutes if enemy_support and duration_minutes > 0 else 0
 
-    # Gold difference at 14 mins
-    user_gold_at_14 = next((p['gold'] for p in user_match_data.get('gold_timeline', []) if p['timestamp'] >= 840000), 0)
-    enemy_gold_at_14 = next((p['gold'] for p in enemy_support.get('gold_timeline', []) if p['timestamp'] >= 840000), 0) if enemy_support else 0
-    gold_diff_at_14 = user_gold_at_14 - enemy_gold_at_14
-
-    # Pro GPM
+    # --- FIX: Pro GPM calculation with case-insensitive champion matching from allParticipants ---
     pro_data = load_json(PRO_DATA_FILE)
-    pro_games_on_champ = [g for g in pro_data if g.get("champion") == champion_name]
-    pro_gpms = [game.get("goldEarned", 0) / (game.get("gameDuration", 1) / 60) for game in pro_games_on_champ]
+    pro_gpms = []
+    for game in pro_data:
+        # Find the pro player's stats within the participants list
+        pro_participant = next((p for p in game.get('allParticipants', []) if p.get('championName', '').lower() == champion_name.lower()), None)
+        if pro_participant:
+            duration_minutes = game.get("gameDuration", 1) / 60
+            gpm = pro_participant.get("goldEarned", 0) / duration_minutes if duration_minutes > 0 else 0
+            pro_gpms.append(gpm)
+    
     avg_pro_gpm = np.mean(pro_gpms) if pro_gpms else 0
+
+    # NOTE: Gold difference at 14 mins is disabled for now as timeline data is not stored.
+    gold_diff_at_14 = "N/A"
 
     return {
         "your_champion": champion_name,
@@ -421,5 +407,5 @@ def analyze_gold_efficiency(match_id: str, game_name: str, tag_line: str) -> dic
         "enemy_gpm": f"{enemy_gpm:.2f}",
         "pro_average_gpm": f"{avg_pro_gpm:.2f}",
         "gold_difference_at_14_mins": gold_diff_at_14,
-        "comparison_insight": f"Your GPM was {user_gpm:.2f} vs. your opponent's {enemy_gpm:.2f}. At 14 minutes, you had a gold difference of {gold_diff_at_14}. The pro average GPM for {champion_name} is {avg_pro_gpm:.2f}."
+        "comparison_insight": f"Your GPM was {user_gpm:.2f} vs. your opponent's {enemy_gpm:.2f}. The pro average GPM for {champion_name} is {avg_pro_gpm:.2f}."
     }

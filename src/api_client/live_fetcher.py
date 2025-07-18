@@ -57,7 +57,13 @@ def fetch_and_analyze_player_data(game_name: str, tag_line: str, region: str, nu
             team_id = participant_info.get("teamId")
             timeline_analysis = analyze_match_timeline(timeline_data, p_id, team_id)
 
-            combined_match_data = {**stats, **timeline_analysis}
+            # Combine all data sources for a complete record
+            combined_match_data = {
+                **stats, 
+                **timeline_analysis,
+                "allParticipants": match_detail["info"]["participants"], # <-- THE FIX
+                "gameDuration": match_detail["info"]["gameDuration"]   # <-- Also useful
+            }
             analyzed_games.append(combined_match_data)
     
     logger.info(f"Successfully analyzed {len(analyzed_games)} support games.")

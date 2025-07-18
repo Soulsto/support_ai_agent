@@ -142,9 +142,9 @@ with st.sidebar:
 tabs = st.tabs([
     "🤖 AI Coach", 
     "📊 Game Analysis Dashboard", 
-    "🧪 New Agent Tools",  # <-- NEW TAB
-    "📂 Raw Game Data", 
-    "⚡ FastAPI"
+    "🧪 New Agent Tools", 
+    "📂 Your Game Data", 
+    "⚡ Pro Player Build"
 ])
 
 with tabs[0]: # AI Coach
@@ -219,28 +219,35 @@ with tabs[2]: # New Agent Tools
         with col2:
             enemy_champ = st.text_input("Enemy Support Champion", "Blitzcrank")
         if st.button("Get Matchup Advice"):
-            with st.spinner("Analyzing pro data..."):
+            with st.spinner("The coach is thinking about this matchup..."):
                 advice = get_pro_matchup_advice.func(your_champion=your_champ, enemy_champion=enemy_champ)
                 if "error" in advice:
                     st.error(advice["error"])
                 else:
-                    st.json(advice)
+                    st.header(advice.get("matchup", "Matchup Advice"))
+                    st.markdown(advice.get("advice", "No advice could be generated."))
         st.divider()
 
         # --- 3. Gold Efficiency ---
         st.subheader("💰 Gold Efficiency Analysis")
         if not st.session_state.user_games.empty:
-            match_ids_gold = st.session_state.user_games['matchId'].tolist()
-            selected_match_gold = st.selectbox("Select a Match ID for Gold Analysis", options=match_ids_gold)
+            # Create descriptive options for the dropdown
+            user_games_df = st.session_state.user_games
+            descriptive_options_gold = [f"{game.get('champion', 'Unknown')} - {game.get('matchId')}" for game in user_games_df.to_dict('records')]
+            selected_option_gold = st.selectbox("Select a Game for Gold Analysis", options=descriptive_options_gold, key="gold_eff_select")
+            
             if st.button("Analyze Gold Efficiency"):
-                with st.spinner("Analyzing gold..."):
-                    current_user = st.session_state.current_user
-                    gold_data = analyze_gold_efficiency.func(match_id=selected_match_gold, game_name=current_user['game_name'], tag_line=current_user['tag_line'])
-                    if "error" in gold_data:
-                        st.error(gold_data["error"])
-                    else:
-                        st.metric(label=f"Your GPM on {gold_data['champion']}", value=gold_data['your_gpm'], delta=f"{float(gold_data['your_gpm']) - float(gold_data['pro_average_gpm']):.2f} vs Pro Avg")
-                        st.write(f"Pro Average GPM: {gold_data['pro_average_gpm']}")
+                if selected_option_gold:
+                    # Extract the match_id from the selected string
+                    selected_match_id_gold = selected_option_gold.split(" - ")[1]
+                    with st.spinner("Analyzing gold..."):
+                        current_user = st.session_state.current_user
+                        gold_data = analyze_gold_efficiency.func(match_id=selected_match_id_gold, game_name=current_user['game_name'], tag_line=current_user['tag_line'])
+                        if "error" in gold_data:
+                            st.error(gold_data["error"])
+                        else:
+                            st.metric(label=f"Your GPM on {gold_data['your_champion']}", value=gold_data['your_gpm'], delta=f"{float(gold_data['your_gpm']) - float(gold_data['pro_average_gpm']):.2f} vs Pro Avg")
+                            st.write(f"Pro Average GPM: {gold_data['pro_average_gpm']}")
         else:
             st.info("No games loaded to analyze gold for.")
         st.divider()

@@ -1,10 +1,14 @@
 services:
-  # This defines your web application service
   - type: web
-    name: support_ai_agent
-    env: docker # Specify we are using a Docker environment
-    # Health Check: Render will ping this URL to make sure your app is running
-    healthCheckPath: /healthz
-    # Optional: Set a custom number of instances, memory, or CPU.
-    # The free tier has its own limits.
+    name: lol-support-agent-backend
+    env: docker
     plan: free
+    repo: https://github.com/Soulsto/support_ai_agent.git
+    dockerContext: .
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12
+      - key: PORT
+        value: 8001

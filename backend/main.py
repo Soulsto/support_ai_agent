@@ -10,6 +10,12 @@ from src.agent.tools import get_pro_build_for_champion, get_comprehensive_game_a
 # Create the FastAPI app instance
 app = FastAPI()
 
+@app.get("/healthz")
+def health_check():
+    """ Health check endpoint for Render. """
+    return {"status": "ok"}
+
+
 # --- API ENDPOINTS ---
 
 @app.get("/")
